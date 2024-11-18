@@ -201,13 +201,7 @@ class OpenAIPrompt(override val uid: String) extends Transformer
   }
 
   override protected def prepareEntity: Row => Option[AbstractHttpEntity] = {
-    r =>
-      openAICompletion match {
-        case chatCompletion: OpenAIChatCompletion =>
-          chatCompletion.prepareEntity(r)
-        case completion: OpenAICompletion =>
-          completion.prepareEntity(r)
-      }
+    r => openAICompletion.prepareEntity(r)
   }
 
   private def getParser: OutputParser = {

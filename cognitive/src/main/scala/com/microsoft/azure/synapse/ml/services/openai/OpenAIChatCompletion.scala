@@ -19,7 +19,7 @@ import scala.language.existentials
 object OpenAIChatCompletion extends ComplexParamsReadable[OpenAIChatCompletion]
 
 class OpenAIChatCompletion(override val uid: String) extends OpenAIServicesBase(uid)
-  with HasOpenAITextParams with HasMessagesInput with HasCognitiveServiceInput
+  with HasOpenAITextParams with HasMessagesInput
   with HasInternalJsonOutputParser with SynapseMLLogging {
   logClass(FeatureNames.AiServices.OpenAI)
 

@@ -23,7 +23,7 @@ import scala.language.existentials
 object OpenAIEmbedding extends ComplexParamsReadable[OpenAIEmbedding]
 
 class OpenAIEmbedding (override val uid: String) extends OpenAIServicesBase(uid)
-  with HasOpenAIEmbeddingParams with HasCognitiveServiceInput with SynapseMLLogging {
+  with HasOpenAIEmbeddingParams with SynapseMLLogging {
   logClass(FeatureNames.AiServices.OpenAI)
 
   def this() = this(Identifiable.randomUID("OpenAIEmbedding"))
@@ -68,7 +68,7 @@ class OpenAIEmbedding (override val uid: String) extends OpenAIServicesBase(uid)
     new StringEntity(fullPayload.toJson.compactPrint, ContentType.APPLICATION_JSON)
   }
 
-  override protected def prepareEntity: Row => Option[AbstractHttpEntity] = {
+  override protected[openai] def prepareEntity: Row => Option[AbstractHttpEntity] = {
     r =>
       lazy val optionalParams: Map[String, Any] = getOptionalParams(r)
       getValueOpt(r, text)
