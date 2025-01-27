@@ -361,3 +361,61 @@ class SentimentAnalysisSuite extends TransformerFuzzing[AnalyzeText] with TextEn
 
   override def reader: MLReadable[_] = AnalyzeText
 }
+
+
+
+
+
+class SentimentAnalysisLROSuite extends TransformerFuzzing[AnalyzeTextLongRunningOpService] with TextEndpoint {
+
+  import spark.implicits._
+
+  implicit val doubleEquality: Equality[Double] = TolerantNumerics.tolerantDoubleEquality(1e-3)
+
+  def df: DataFrame = Seq(
+//    "Great atmosphere. Close to plenty of restaurants, hotels, and transit! Staff are friendly and helpful.",
+    "What a happy story!"
+    ).toDF("text")
+
+  def model: AnalyzeTextLongRunningOpService = new AnalyzeTextLongRunningOpService()
+    .setSubscriptionKey(textKey)
+    .setLocation(textApiLocation)
+    .setTextCol("text")
+    .setKind("SentimentAnalysis")
+    .setOutputCol("response")
+
+  test("Basic usage") {
+    val docs = model.transform(df)
+//                      .withColumn("docs", col("response.documents"))
+                      .collect()
+    assert(docs(0).getAs[Seq[Row]]("docs").head.getAs[String]("sentiment") == "positive")
+//    assert(docs(1).getAs[Seq[Row]]("docs").head.getAs[String]("sentiment") == "negative")
+  }
+
+
+  test("Show stats") {
+    val docs = model.setShowStats(true).transform(df)
+                      .withColumn("docs", col("response.results.documents"))
+                      .withColumn("stats", col("response.results.statistics"))
+                      .collect()
+    assert(docs(0).getAs[Seq[Row]]("docs").head.getAs[String]("sentiment") == "positive")
+    assert(docs(1).getAs[Seq[Row]]("docs").head.getAs[String]("sentiment") == "negative")
+    assert(docs.head.getAs[Row]("stats").getAs[Int]("validDocumentsCount") == 1)
+  }
+
+  test("Opinion Mining") {
+    val result = model.setOpinionMining(true).setShowStats(true).transform(df)
+                      .withColumn("docs", col("response.results.documents"))
+                      .collect()
+    assert(result(0).getAs[Seq[Row]]("docs").head.getAs[String]("sentiment") == "positive")
+    assert(result(1).getAs[Seq[Row]]("docs").head.getAs[String]("sentiment") == "negative")
+    val fromRow = SentimentAssessment.makeFromRowConverter
+    assert(result.head.getAs[Seq[Row]]("docs").head.getAs[Seq[Row]]("sentences").head.getAs[String]("sentiment")
+             == "positive")
+  }
+
+  override def testObjects(): Seq[TestObject[AnalyzeTextLongRunningOpService]] =
+    Seq(new TestObject[AnalyzeTextLongRunningOpService](model, df))
+
+  override def reader: MLReadable[_] = AnalyzeTextLongRunningOpService
+}

@@ -226,7 +226,9 @@ trait BasicAsyncReply extends HasAsyncReply {
     get.setHeader("User-Agent", s"synapseml/${BuildInfo.version}${HeaderValues.PlatformInfo}")
     val resp = convertAndClose(sendWithRetries(client, get, getBackoffs))
     get.releaseConnection()
-    val status = IOUtils.toString(resp.entity.get.content, "UTF-8")
+    val strResponse = IOUtils.toString(resp.entity.get.content, "UTF-8")
+    System.out.println(strResponse)
+    val status = strResponse
       .parseJson.asJsObject.fields.get("status").map(_.convertTo[String])
     status.map(_.toLowerCase()).flatMap {
       case "succeeded" | "failed" | "partiallycompleted" => Some(resp)

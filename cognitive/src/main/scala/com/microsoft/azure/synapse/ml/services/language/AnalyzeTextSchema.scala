@@ -172,6 +172,46 @@ case class SentimentDocumentResult(id: String,
 
 object SentimentDocumentResult extends SparkBindings[SentimentDocumentResult]
 
+case class SentimentAnalysisInput(analysisInput: MultiLanguageAnalysisInput,
+                                  parameters: SentimentAnalysisTaskParameters,
+                                  kind: String)
+object SentimentAnalysisInput extends SparkBindings[SentimentAnalysisInput]
+
+case class SentimentAnalysisLROTask(parameters: SentimentAnalysisTaskParameters,
+                                    taskName: Option[String],
+                                    kind: String)
+object SentimentAnalysisLROTask extends SparkBindings[SentimentAnalysisLROTask]
+
+case class SentimentAnalysisJobsInput(displayName: Option[String],
+                                      analysisInput: MultiLanguageAnalysisInput,
+                                      tasks: Seq[SentimentAnalysisLROTask])
+object SentimentAnalysisJobsInput extends SparkBindings[SentimentAnalysisJobsInput]
+
+case class SentimentAnlysisJobState(displayName: Option[String],
+                                    createdDateTime: String,
+                                    expirationDateTime: Option[String],
+                                    jobId: String,
+                                    lastUpdatedDateTime: String,
+                                    status: String,
+                                    errors: Option[Seq[String]],
+                                    nextLink: Option[String],
+                                    tasks: SentimentAnalysisTasks,
+                                    statistics: Option[RequestStatistics])
+object SentimentAnlysisJobState extends SparkBindings[SentimentAnlysisJobState]
+
+case class SentimentAnalysisTasks(completed: Int,
+                                  failed: Int,
+                                  inProgress: Int,
+                                  total: Int,
+                                  items: Option[Seq[SentimentLROResult]])
+object SentimentAnalysisTasks extends SparkBindings[SentimentAnalysisTasks]
+
+case class SentimentLROResult(results: SentimentResult,
+                              lastUpdateDateTime: String,
+                              status: String,
+                              taskName: Option[String],
+                              kind: String)
+object SentimentLROResult extends SparkBindings[SentimentLROResult]
 
 case class Entity(category: String,
                   confidenceScore: Double,
@@ -234,4 +274,10 @@ object ATJSONFormat {
     jsonFormat5(PiiTaskParameters.apply)
   implicit val SentimentAnalysisTPFormat: RootJsonFormat[SentimentAnalysisTaskParameters] =
     jsonFormat4(SentimentAnalysisTaskParameters.apply)
+  implicit val AnalyzeTextSentimentAnalysisInputFormat: RootJsonFormat[SentimentAnalysisInput] =
+    jsonFormat3(SentimentAnalysisInput.apply)
+  implicit val SentimentAnalysisLROTaskFormat: RootJsonFormat[SentimentAnalysisLROTask] =
+    jsonFormat3(SentimentAnalysisLROTask.apply)
+  implicit val SentimentAnalysisJobsInputFormat: RootJsonFormat[SentimentAnalysisJobsInput] =
+    jsonFormat3(SentimentAnalysisJobsInput.apply)
 }
