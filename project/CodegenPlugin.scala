@@ -28,6 +28,19 @@ object CodegenPlugin extends AutoPlugin {
 
   override def requires: Plugins = CondaPlugin
 
+  private def findBuiltPythonWheel(packageDir: File, projectName: String): File = {
+    val wheelPrefix = s"${projectName.replace("-", "_")}-"
+    val wheels = Option(packageDir.listFiles()).getOrElse(Array.empty).filter { file =>
+      file.isFile &&
+      file.getName.startsWith(wheelPrefix) &&
+      file.getName.endsWith(".whl")
+    }.sortBy(_.lastModified())
+
+    wheels.lastOption.getOrElse {
+      throw new IllegalStateException(s"No built wheel found in ${packageDir.getAbsolutePath} for $projectName")
+    }
+  }
+
   def rCmd(activateCondaEnv: Seq[String], cmd: Seq[String], wd: File, libPath: String): Unit = {
     runCmd(activateCondaEnv ++ cmd, wd, Map("R_LIBS" -> libPath, "R_USER_LIBS" -> libPath))
   }
@@ -65,11 +78,17 @@ object CodegenPlugin extends AutoPlugin {
 
     val packagePython = TaskKey[Unit]("packagePython", "Package python sdk")
     val installPipPackage = TaskKey[Unit]("installPipPackage", "install python sdk")
+    val preparePythonTests = TaskKey[Unit]("preparePythonTests",
+      "install local python packages required by tests")
     val removePipPackage = TaskKey[Unit]("removePipPackage",
       "remove the installed synapseml pip package from local env")
 
     val publishPython = TaskKey[Unit]("publishPython", "publish python wheel")
     val testPython = TaskKey[Unit]("testPython", "test python sdk")
+
+    val pythonIgnoreTestPath = settingKey[Option[String]]("Optional path to ignore in pytest")
+    val pythonSubTestPath = settingKey[Option[String]]("Optional subpath of tests to run")
+
     val pyCodegen = TaskKey[Unit]("pyCodegen", "Generate python code")
     val pyTestgen = TaskKey[Unit]("pyTestgen", "Generate python tests")
 
@@ -232,11 +251,17 @@ object CodegenPlugin extends AutoPlugin {
       codegen.value
       createCondaEnvTask.value
       val destPyDir = join(targetDir.value, "classes", genPackageNamespace.value)
-      val packageDir = join(codegenDir.value, "package", "python").absolutePath
+      val packageDirFile = join(codegenDir.value, "package", "python")
+      val packageDir = packageDirFile.absolutePath
       val pythonSrcDir = join(codegenDir.value, "src", "python")
       if (destPyDir.exists()) FileUtils.forceDelete(destPyDir)
       val sourcePyDir = join(pythonSrcDir.getAbsolutePath, genPackageNamespace.value)
       FileUtils.copyDirectory(sourcePyDir, destPyDir)
+      Option(packageDirFile.listFiles()).getOrElse(Array.empty).foreach { file =>
+        if (file.isFile && file.getName.startsWith(s"${name.value.replace("-", "_")}-") && file.getName.endsWith(".whl")) {
+          FileUtils.forceDelete(file)
+        }
+      }
       packagePythonWheelCmd(packageDir, pythonSrcDir)
     },
     removePipPackage := {
@@ -246,18 +271,27 @@ object CodegenPlugin extends AutoPlugin {
       val packagePythonResult: Unit = packagePython.value
       val publishLocalResult: Unit = (publishLocal dependsOn packagePython).value
       val rootPublishLocalResult: Unit = (LocalRootProject / Compile / publishLocal).value
+      val packageDir = join(codegenDir.value, "package", "python")
+      val wheel = findBuiltPythonWheel(packageDir, name.value)
       runCmd(
-        activateCondaEnv ++ Seq("pip", "install", "-I",
-          s"${name.value.replace("-", "_")}-${pythonizedVersion(version.value)}-py2.py3-none-any.whl"),
-        join(codegenDir.value, "package", "python"))
+        activateCondaEnv ++ Seq(
+          "pip",
+          "install",
+          "-I",
+          "--no-deps",
+          wheel.getAbsolutePath
+        ),
+        packageDir)
     },
     publishPython := {
       val packagePythonResult: Unit = packagePython.value
       val publishLocalResult: Unit = (publishLocal dependsOn packagePython).value
       val rootPublishLocalResult: Unit = (LocalRootProject / Compile / publishLocal).value
-      val fn = s"${name.value.replace("-", "_")}-${pythonizedVersion(version.value)}-py2.py3-none-any.whl"
+      val packageDir = join(codegenDir.value, "package", "python")
+      val wheel = findBuiltPythonWheel(packageDir, name.value)
+      val fn = wheel.getName
       singleUploadToBlob(
-        join(codegenDir.value, "package", "python", fn).toString,
+        wheel.toString,
         version.value + "/" + fn, "pip")
     },
     mergePyCode := {
@@ -266,21 +300,40 @@ object CodegenPlugin extends AutoPlugin {
       FileUtils.copyDirectory(srcDir, destDir)
     },
     pyCodegen := pyCodeGenImpl.value,
+    pythonIgnoreTestPath := sys.props.get("pythonIgnoreTestPath"),
+    pythonSubTestPath := sys.props.get("pythonSubTestPath"),
+    preparePythonTests := Def.taskDyn {
+      if (thisProjectRef.value.project == "core") {
+        Def.task {
+          installPipPackage.value
+        }
+      } else {
+        Def.sequential(
+          LocalProject("core") / installPipPackage,
+          installPipPackage
+        )
+      }
+    }.value,
     testPython := {
-      installPipPackage.value
+      preparePythonTests.value
       pyTestgen.value
       val mainTargetDir = join(baseDirectory.value.getParent, "target")
-      runCmd(
-        activateCondaEnv ++ Seq("python",
-          "-m",
-          "pytest",
-          //s"--cov=${genPackageNamespace.value}",
-          s"--junitxml=${join(mainTargetDir, s"python-test-results-${name.value}.xml")}",
-          //"--cov-report=xml",
-          genTestPackageNamespace.value
-        ),
-        new File(codegenDir.value, "test/python/")
-      )
+      val baseTestPath = genTestPackageNamespace.value
+      val ignoreArg = pythonIgnoreTestPath.value.map(path => s"--ignore=${new File(baseTestPath, path)}").toSeq
+      val subPathArg = pythonSubTestPath.value.map(identity).toSeq
+      val testPath: String = subPathArg.headOption
+        .map(sub => join(baseTestPath, sub).toString)
+        .getOrElse(baseTestPath)
+
+      val cmd = activateCondaEnv ++ Seq(
+        "python",
+        "-m", "pytest",
+        s"--junitxml=${join(mainTargetDir, s"python-test-results-${name.value}.xml")}",
+        // "--cov=${genPackageNamespace.value}",
+        // "--cov-report=xml",
+      ) ++ ignoreArg ++ Seq(testPath)
+
+      runCmd(cmd, new File(codegenDir.value, "test/python/"))
     },
     rCodeGen := rCodeGenImpl.value,
     rTestGen := rTestGenImpl.value,
